@@ -1,0 +1,1164 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-fullscreen">
+    <meta name="apple-mobile-web-app-title" content="SuperLector">
+    <meta name="theme-color" content="#764ba2">
+    <meta name="description" content="Juego educativo de lectura para niños de 5 años">
+    <title>SuperLector Adventures</title>
+    <link rel="manifest" href="manifest.json">
+    <link href="https://fonts.googleapis.com/css2?family=Andika:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Andika', 'Comic Sans MS', cursive;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            touch-action: none;
+        }
+        #gameCanvas {
+            border-radius: 15px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.5);
+            max-width: 95vw;
+            max-height: 95vh;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="1000" height="700"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Datos del juego
+        const gameData = {
+            coins: 0,
+            lives: 3,
+            currentLevel: 1,
+            unlockedLevels: 1,
+            currentCostume: 'kid',
+            ownedCostumes: ['kid'],
+            hasShield: false,
+            wordsRead: 0,
+            scene: 'menu'
+        };
+
+        // Palabras por nivel
+        const levelWords = {
+            1: ['ai', 'io', 'ua', 'eo', 'oi', 'au', 'ei', 'ou', 'ae', 'ie'],
+            2: ['papa', 'pipa', 'pepa', 'papi', 'pepe', 'popa', 'pila', 'palo', 'pala', 'polo'],
+            3: ['lola', 'lupa', 'lila', 'lulo', 'palo', 'pila', 'pelo', 'pala', 'polo', 'lipa'],
+            4: ['mama', 'mapa', 'mola', 'lima', 'lama', 'mima', 'mal', 'malo', 'lomo', 'mami'],
+            5: ['sala', 'sopa', 'sol', 'sal', 'masa', 'misa', 'silo', 'liso', 'piso', 'paso'],
+            6: ['nene', 'nana', 'mano', 'mono', 'sano', 'lona', 'nena', 'nina', 'nino', 'mina'],
+            7: ['pato', 'lata', 'nota', 'loto', 'teta', 'tito', 'nata', 'tala', 'tela', 'pata'],
+            8: ['dado', 'dedo', 'dodo', 'lado', 'lodo', 'moda', 'nada', 'dama', 'duna', 'dona'],
+            9: ['jaja', 'ojo', 'jala', 'jota', 'jeta', 'mojo', 'judo', 'tajo', 'soja', 'caja']
+        };
+
+        // Disfraces y items disponibles
+        const shopItems = [
+            { name: 'Superman', id: 'superman', price: 5, type: 'costume' },
+            { name: 'Spiderman', id: 'spiderman', price: 5, type: 'costume' },
+            { name: 'Batman', id: 'batman', price: 5, type: 'costume' },
+            { name: 'Thor', id: 'thor', price: 5, type: 'costume' },
+            { name: 'Hulk', id: 'hulk', price: 5, type: 'costume' },
+            { name: 'Ironman', id: 'ironman', price: 5, type: 'costume' },
+            { name: 'Mario', id: 'mario', price: 5, type: 'costume' },
+            { name: '🛡️ Escudo', id: 'shield', price: 3, type: 'item' }
+        ];
+
+        // Player
+        const player = {
+            x: 100,
+            y: 500,
+            width: 40,
+            height: 50,
+            velocityX: 0,
+            velocityY: 0,
+            speed: 6,
+            jumpPower: 16,
+            gravity: 0.6,
+            onGround: false,
+            invincible: false,
+            invincibleTimer: 0
+        };
+
+        // Game state
+        let currentWords = [];
+        let signs = [];
+        let ghosts = [];
+        let dinosaur = null;
+        let cameraX = 0;
+        let showingDialog = false;
+        let currentSign = null;
+        let gameTime = 0;
+
+        // Input
+        const keys = {};
+        let touchLeft = false;
+        let touchRight = false;
+        let touchJump = false;
+
+        // Mouse/Touch
+        let mouseX = 0;
+        let mouseY = 0;
+        let mouseDown = false;
+
+        // ============ EVENTOS DE INPUT ============
+        document.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+        });
+
+        document.addEventListener('keyup', (e) => {
+            keys[e.key] = false;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+            mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+            mouseDown = true;
+            handleClick(mouseX, mouseY);
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            mouseDown = false;
+        });
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            mouseX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+            mouseY = (touch.clientY - rect.top) * (canvas.height / rect.height);
+            mouseDown = true;
+            handleClick(mouseX, mouseY);
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            mouseDown = false;
+            touchLeft = false;
+            touchRight = false;
+        });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            mouseX = (touch.clientX - rect.left) * (canvas.width / rect.width);
+            mouseY = (touch.clientY - rect.top) * (canvas.height / rect.height);
+        });
+
+        // ============ FUNCIONES DE DIBUJO ============
+        function drawRect(x, y, w, h, color, stroke = null) {
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, w, h);
+            if (stroke) {
+                ctx.strokeStyle = stroke;
+                ctx.lineWidth = 3;
+                ctx.strokeRect(x, y, w, h);
+            }
+        }
+
+        function drawCircle(x, y, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawText(text, x, y, size, color, align = 'left', stroke = false) {
+            ctx.font = `bold ${size}px Andika, Arial, sans-serif`;
+            ctx.fillStyle = color;
+            ctx.textAlign = align;
+            ctx.textBaseline = 'middle';
+            
+            if (stroke) {
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 6;
+                ctx.strokeText(text, x, y);
+            }
+            
+            ctx.fillText(text, x, y);
+        }
+
+        function drawButton(x, y, w, h, text, color) {
+            drawRect(x + 3, y + 3, w, h, 'rgba(0,0,0,0.3)');
+            drawRect(x, y, w, h, color, '#fff');
+            drawText(text, x + w/2, y + h/2, 20, '#fff', 'center');
+            return { x, y, w, h };
+        }
+
+        // ============ DIBUJAR SIGNO DE INTERROGACIÓN FLOTANTE ============
+        function drawQuestionSign(x, y, word, revealed, read) {
+            if (revealed || read) {
+                // Mostrar palabra en grande
+                ctx.fillStyle = read ? '#999' : '#000';
+                ctx.font = 'bold 56px Andika, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                
+                // Fondo semitransparente
+                const metrics = ctx.measureText(word);
+                const padding = 25;
+                const width = metrics.width + padding * 2;
+                const height = 70;
+                
+                ctx.fillStyle = read ? 'rgba(144, 238, 144, 0.9)' : 'rgba(255, 255, 255, 0.95)';
+                ctx.fillRect(x - width/2, y - height/2, width, height);
+                ctx.strokeStyle = read ? '#4CAF50' : '#FF6B6B';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(x - width/2, y - height/2, width, height);
+                
+                // Palabra
+                ctx.fillStyle = read ? '#555' : '#000';
+                ctx.fillText(word, x, y);
+            } else {
+                // Signo de interrogación flotante grande
+                // Sombra
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.font = 'bold 120px Andika, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('?', x + 5, y + 5);
+                
+                // Signo principal
+                ctx.fillStyle = '#FF6B6B';
+                ctx.fillText('?', x, y);
+                
+                // Contorno blanco
+                ctx.strokeStyle = '#FFF';
+                ctx.lineWidth = 4;
+                ctx.strokeText('?', x, y);
+            }
+        }
+
+        // ============ DIBUJAR PERSONAJES ============
+        function drawKid(x, y) {
+            drawCircle(x, y - 20, 12, '#FFDBAC');
+            ctx.fillStyle = '#000';
+            ctx.fillRect(x - 4, y - 23, 2, 2);
+            ctx.fillRect(x + 2, y - 23, 2, 2);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y - 20, 5, 0.2, Math.PI - 0.2);
+            ctx.stroke();
+            drawCircle(x, y - 27, 10, '#3E2723');
+            drawRect(x - 7, y - 8, 14, 18, '#2196F3');
+            drawRect(x - 13, y - 5, 6, 12, '#2196F3');
+            drawRect(x + 7, y - 5, 6, 12, '#2196F3');
+            drawRect(x - 7, y + 10, 6, 15, '#1976D2');
+            drawRect(x + 1, y + 10, 6, 15, '#1976D2');
+        }
+
+        function drawSuperman(x, y) {
+            drawCircle(x, y - 20, 12, '#FFDBAC');
+            drawCircle(x - 4, y - 23, 2, '#2196F3');
+            drawCircle(x + 4, y - 23, 2, '#2196F3');
+            drawCircle(x, y - 27, 10, '#000');
+            drawRect(x - 9, y - 7, 2, 15, '#F00');
+            drawRect(x + 7, y - 7, 2, 15, '#F00');
+            drawRect(x - 7, y - 8, 14, 18, '#0D47A1');
+            ctx.fillStyle = '#F00';
+            ctx.beginPath();
+            ctx.moveTo(x - 5, y - 5);
+            ctx.lineTo(x + 5, y - 5);
+            ctx.lineTo(x, y + 3);
+            ctx.fill();
+            drawRect(x - 13, y - 5, 6, 12, '#0D47A1');
+            drawRect(x + 7, y - 5, 6, 12, '#0D47A1');
+            drawRect(x - 7, y + 10, 6, 12, '#1565C0');
+            drawRect(x + 1, y + 10, 6, 12, '#1565C0');
+            drawRect(x - 7, y + 20, 6, 5, '#F00');
+            drawRect(x + 1, y + 20, 6, 5, '#F00');
+        }
+
+        function drawSpiderman(x, y) {
+            drawCircle(x, y - 20, 12, '#D32F2F');
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.ellipse(x - 4, y - 22, 4, 6, 0, 0, Math.PI * 2);
+            ctx.ellipse(x + 4, y - 22, 4, 6, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            drawRect(x - 7, y - 8, 14, 18, '#D32F2F');
+            drawCircle(x, y, 3, '#000');
+            drawRect(x - 2, y, 4, 6, '#000');
+            drawRect(x - 13, y - 5, 6, 12, '#D32F2F');
+            drawRect(x + 7, y - 5, 6, 12, '#D32F2F');
+            drawRect(x - 7, y + 10, 6, 15, '#D32F2F');
+            drawRect(x + 1, y + 10, 6, 15, '#D32F2F');
+        }
+
+        function drawBatman(x, y) {
+            drawCircle(x, y - 18, 10, '#FFDBAC');
+            drawRect(x - 5, y - 25, 10, 12, '#212121');
+            ctx.fillStyle = '#212121';
+            ctx.beginPath();
+            ctx.moveTo(x - 5, y - 25);
+            ctx.lineTo(x - 7, y - 32);
+            ctx.lineTo(x - 3, y - 25);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(x + 5, y - 25);
+            ctx.lineTo(x + 7, y - 32);
+            ctx.lineTo(x + 3, y - 25);
+            ctx.fill();
+            drawCircle(x - 3, y - 20, 2, '#FFF');
+            drawCircle(x + 3, y - 20, 2, '#FFF');
+            drawRect(x - 9, y - 7, 2, 20, '#000');
+            drawRect(x + 7, y - 7, 2, 20, '#000');
+            drawRect(x - 7, y - 8, 14, 18, '#424242');
+            drawCircle(x, y, 5, '#FFD700');
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.moveTo(x, y - 3);
+            ctx.lineTo(x - 5, y + 3);
+            ctx.lineTo(x + 5, y + 3);
+            ctx.fill();
+            drawRect(x - 13, y - 5, 6, 12, '#424242');
+            drawRect(x + 7, y - 5, 6, 12, '#424242');
+            drawRect(x - 7, y + 10, 6, 15, '#424242');
+            drawRect(x + 1, y + 10, 6, 15, '#424242');
+        }
+
+        function drawThor(x, y) {
+            drawCircle(x, y - 20, 12, '#FFDBAC');
+            drawCircle(x - 4, y - 23, 2, '#2196F3');
+            drawCircle(x + 4, y - 23, 2, '#2196F3');
+            drawCircle(x, y - 27, 10, '#FFD700');
+            drawRect(x - 9, y - 20, 4, 10, '#FFD700');
+            drawRect(x + 5, y - 20, 4, 10, '#FFD700');
+            drawRect(x - 9, y - 7, 2, 15, '#C62828');
+            drawRect(x + 7, y - 7, 2, 15, '#C62828');
+            drawRect(x - 7, y - 8, 14, 18, '#616161');
+            drawCircle(x - 4, y - 5, 3, '#C0C0C0');
+            drawCircle(x + 4, y - 5, 3, '#C0C0C0');
+            drawCircle(x, y + 2, 3, '#C0C0C0');
+            drawRect(x - 13, y - 5, 6, 12, '#616161');
+            drawRect(x + 7, y - 5, 6, 12, '#616161');
+            drawRect(x - 7, y + 10, 6, 15, '#616161');
+            drawRect(x + 1, y + 10, 6, 15, '#616161');
+        }
+
+        function drawHulk(x, y) {
+            drawCircle(x, y - 20, 14, '#4CAF50');
+            drawCircle(x - 4, y - 23, 3, '#FFF');
+            drawCircle(x + 4, y - 23, 3, '#FFF');
+            drawCircle(x - 4, y - 23, 2, '#000');
+            drawCircle(x + 4, y - 23, 2, '#000');
+            ctx.strokeStyle = '#2E7D32';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x - 6, y - 26);
+            ctx.lineTo(x - 2, y - 27);
+            ctx.moveTo(x + 6, y - 26);
+            ctx.lineTo(x + 2, y - 27);
+            ctx.stroke();
+            drawRect(x - 7, y - 30, 14, 5, '#1B5E20');
+            drawRect(x - 9, y - 8, 18, 18, '#4CAF50');
+            drawRect(x - 7, y + 10, 6, 15, '#7B1FA2');
+            drawRect(x + 1, y + 10, 6, 15, '#7B1FA2');
+            drawRect(x - 15, y - 5, 6, 12, '#4CAF50');
+            drawRect(x + 9, y - 5, 6, 12, '#4CAF50');
+        }
+
+        function drawIronman(x, y) {
+            drawCircle(x, y - 20, 12, '#D32F2F');
+            drawRect(x - 3, y - 23, 6, 8, '#FFD700');
+            drawRect(x - 3, y - 21, 2, 3, '#00E5FF');
+            drawRect(x + 1, y - 21, 2, 3, '#00E5FF');
+            drawRect(x - 7, y - 8, 14, 18, '#D32F2F');
+            drawCircle(x, y, 4, '#00E5FF');
+            ctx.strokeStyle = '#FFF';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(x, y, 4, 0, Math.PI * 2);
+            ctx.stroke();
+            drawRect(x - 7, y - 8, 2, 18, '#FFD700');
+            drawRect(x + 5, y - 8, 2, 18, '#FFD700');
+            drawRect(x - 13, y - 5, 6, 12, '#D32F2F');
+            drawRect(x + 7, y - 5, 6, 12, '#D32F2F');
+            drawRect(x - 11, y + 3, 4, 4, '#FFD700');
+            drawRect(x + 7, y + 3, 4, 4, '#FFD700');
+            drawRect(x - 7, y + 10, 6, 12, '#D32F2F');
+            drawRect(x + 1, y + 10, 6, 12, '#D32F2F');
+            drawRect(x - 7, y + 20, 6, 5, '#FFD700');
+            drawRect(x + 1, y + 20, 6, 5, '#FFD700');
+        }
+
+        function drawMario(x, y) {
+            drawCircle(x, y - 27, 10, '#F00');
+            drawRect(x - 10, y - 25, 20, 4, '#F00');
+            drawCircle(x, y - 27, 4, '#FFF');
+            drawCircle(x, y - 18, 10, '#FFDBAC');
+            drawRect(x - 5, y - 17, 10, 3, '#3E2723');
+            drawCircle(x - 3, y - 20, 2, '#2196F3');
+            drawCircle(x + 3, y - 20, 2, '#2196F3');
+            drawCircle(x, y - 16, 3, '#FFDBAC');
+            drawRect(x - 7, y - 8, 14, 18, '#1976D2');
+            drawRect(x - 13, y - 5, 6, 8, '#F00');
+            drawRect(x + 7, y - 5, 6, 8, '#F00');
+            drawCircle(x - 5, y - 5, 2, '#FFD700');
+            drawCircle(x + 5, y - 5, 2, '#FFD700');
+            drawRect(x - 7, y + 10, 6, 15, '#1976D2');
+            drawRect(x + 1, y + 10, 6, 15, '#1976D2');
+            drawRect(x - 8, y + 23, 7, 4, '#8D6E63');
+            drawRect(x + 1, y + 23, 7, 4, '#8D6E63');
+        }
+
+        function drawGhost(x, y) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+            ctx.beginPath();
+            ctx.arc(x, y - 15, 15, Math.PI, 0, false);
+            ctx.lineTo(x + 15, y + 10);
+            ctx.lineTo(x + 10, y + 5);
+            ctx.lineTo(x + 5, y + 10);
+            ctx.lineTo(x, y + 5);
+            ctx.lineTo(x - 5, y + 10);
+            ctx.lineTo(x - 10, y + 5);
+            ctx.lineTo(x - 15, y + 10);
+            ctx.closePath();
+            ctx.fill();
+            
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(x - 6, y - 15, 3, 0, Math.PI * 2);
+            ctx.arc(x + 6, y - 15, 3, 0, Math.PI * 2);
+            ctx.fill();
+            
+            ctx.beginPath();
+            ctx.arc(x, y - 8, 5, 0, Math.PI);
+            ctx.stroke();
+        }
+
+        function drawDinosaur(x, y) {
+            // Cuerpo principal (verde)
+            ctx.fillStyle = '#4CAF50';
+            
+            // Cuerpo
+            ctx.fillRect(x - 30, y - 25, 60, 30);
+            
+            // Cabeza
+            ctx.fillRect(x + 25, y - 40, 25, 30);
+            
+            // Cuello
+            ctx.fillRect(x + 20, y - 35, 10, 15);
+            
+            // Cola
+            ctx.beginPath();
+            ctx.moveTo(x - 30, y - 20);
+            ctx.lineTo(x - 50, y - 15);
+            ctx.lineTo(x - 45, y - 5);
+            ctx.lineTo(x - 30, y - 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Patas traseras
+            ctx.fillRect(x - 20, y + 5, 12, 25);
+            ctx.fillRect(x - 5, y + 5, 12, 25);
+            
+            // Patas delanteras (más cortas)
+            ctx.fillRect(x + 10, y + 5, 10, 18);
+            ctx.fillRect(x + 23, y + 5, 10, 18);
+            
+            // Pies
+            ctx.fillStyle = '#388E3C';
+            ctx.fillRect(x - 22, y + 28, 16, 5);
+            ctx.fillRect(x - 7, y + 28, 16, 5);
+            ctx.fillRect(x + 8, y + 21, 14, 5);
+            ctx.fillRect(x + 21, y + 21, 14, 5);
+            
+            // Detalles
+            ctx.fillStyle = '#2E7D32';
+            
+            // Púas en la espalda
+            for (let i = 0; i < 5; i++) {
+                ctx.beginPath();
+                ctx.moveTo(x - 25 + i * 12, y - 25);
+                ctx.lineTo(x - 20 + i * 12, y - 35);
+                ctx.lineTo(x - 15 + i * 12, y - 25);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            // Ojo
+            ctx.fillStyle = '#FFF';
+            ctx.beginPath();
+            ctx.arc(x + 40, y - 30, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(x + 40, y - 30, 2, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Boca
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x + 48, y - 20);
+            ctx.lineTo(x + 42, y - 15);
+            ctx.stroke();
+            
+            // Dientes
+            ctx.fillStyle = '#FFF';
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.moveTo(x + 42 + i * 4, y - 20);
+                ctx.lineTo(x + 44 + i * 4, y - 16);
+                ctx.lineTo(x + 46 + i * 4, y - 20);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            // Contorno
+            ctx.strokeStyle = '#1B5E20';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(x - 30, y - 25, 60, 30);
+            ctx.strokeRect(x + 25, y - 40, 25, 30);
+        }
+
+        function drawPlayer(offsetX = 0, offsetY = 0) {
+            const x = player.x - cameraX + offsetX;
+            const y = player.y + offsetY;
+            
+            if (gameData.hasShield) {
+                ctx.strokeStyle = 'rgba(0, 200, 255, 0.6)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(x, y - 10, 35, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                ctx.strokeStyle = 'rgba(0, 150, 255, 0.4)';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(x, y - 10, 40, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            
+            if (player.invincible && Math.floor(Date.now() / 100) % 2 === 0) {
+                return;
+            }
+            
+            switch(gameData.currentCostume) {
+                case 'kid': drawKid(x, y); break;
+                case 'superman': drawSuperman(x, y); break;
+                case 'spiderman': drawSpiderman(x, y); break;
+                case 'batman': drawBatman(x, y); break;
+                case 'thor': drawThor(x, y); break;
+                case 'hulk': drawHulk(x, y); break;
+                case 'ironman': drawIronman(x, y); break;
+                case 'mario': drawMario(x, y); break;
+            }
+        }
+
+        // ============ ESCENAS ============
+        function drawMenu() {
+            drawRect(0, 0, 1000, 700, '#87CEEB');
+            
+            drawCircle(150, 80, 40, 'rgba(255,255,255,0.7)');
+            drawCircle(180, 75, 50, 'rgba(255,255,255,0.7)');
+            drawCircle(750, 120, 45, 'rgba(255,255,255,0.7)');
+            drawCircle(800, 115, 55, 'rgba(255,255,255,0.7)');
+            
+            drawText('🦸 SuperLector', 500, 80, 52, '#FFF', 'center', true);
+            drawText('Adventures', 500, 140, 46, '#FFF', 'center', true);
+            
+            drawText(`💰 ${gameData.coins}  ❤️ ${gameData.lives}`, 500, 210, 32, '#FFD700', 'center');
+            
+            const buttons = [];
+            for (let i = 1; i <= 9; i++) {
+                const row = Math.floor((i - 1) / 3);
+                const col = (i - 1) % 3;
+                const x = 300 + col * 150;
+                const y = 290 + row * 90;
+                const isUnlocked = i <= gameData.unlockedLevels;
+                
+                const btn = drawButton(x, y, 110, 65, `Nivel ${i}`, isUnlocked ? '#4CAF50' : '#9E9E9E');
+                if (isUnlocked) {
+                    buttons.push({ ...btn, action: 'level', level: i });
+                }
+            }
+            
+            const shopBtn = drawButton(350, 620, 300, 55, '🛒 TIENDA', '#FF9800');
+            buttons.push({ ...shopBtn, action: 'shop' });
+            
+            return buttons;
+        }
+
+        function initGame() {
+            gameData.wordsRead = 0;
+            gameData.hasShield = false;
+            player.x = 100;
+            player.y = 500;
+            player.velocityX = 0;
+            player.velocityY = 0;
+            player.invincible = false;
+            player.invincibleTimer = 0;
+            cameraX = 0;
+            showingDialog = false;
+            gameTime = 0;
+            
+            currentWords = levelWords[gameData.currentLevel];
+            signs = [];
+            ghosts = [];
+            
+            const positions = [
+                [400, 580], [700, 450], [1000, 580], [1300, 400],
+                [1600, 580], [1900, 480], [2200, 580], [2500, 420],
+                [2800, 580], [3100, 460]
+            ];
+            
+            for (let i = 0; i < 10; i++) {
+                signs.push({
+                    x: positions[i][0],
+                    y: positions[i][1],
+                    width: 120,
+                    height: 80,
+                    word: currentWords[i],
+                    read: false,
+                    revealed: false
+                });
+            }
+            
+            // Fantasmas - más cerca del inicio
+            ghosts.push({
+                x: 600,
+                y: -50,
+                velocityY: 3,
+                active: true
+            });
+            ghosts.push({
+                x: 1800,
+                y: -50,
+                velocityY: 2.5,
+                active: true
+            });
+            
+            // Dinosaurio jefe al final
+            dinosaur = {
+                x: 3400,
+                y: 580,
+                width: 80,
+                height: 60,
+                velocityX: 5,
+                direction: -1,
+                active: true
+            };
+        }
+
+        function drawGame() {
+            drawRect(0, 0, 1000, 700, '#87CEEB');
+            
+            for (let i = 0; i < 10; i++) {
+                const x = (i * 600 - cameraX * 0.3) % 3000;
+                drawCircle(x, 80 + (i % 3) * 30, 40, 'rgba(255,255,255,0.6)');
+                drawCircle(x + 30, 75 + (i % 3) * 30, 50, 'rgba(255,255,255,0.6)');
+            }
+            
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(0 - cameraX, 650, 4000, 50);
+            
+            // Isla final para saltar sobre el dinosaurio
+            ctx.fillStyle = '#654321';
+            ctx.fillRect(3300 - cameraX, 450, 250, 25);
+            
+            const platforms = [
+                [300, 520], [600, 470], [900, 520], [1200, 440],
+                [1500, 520], [1800, 500], [2100, 520], [2400, 460],
+                [2700, 520], [3000, 480]
+            ];
+            platforms.forEach(([x, y]) => {
+                ctx.fillRect(x - cameraX, y, 150, 20);
+            });
+            
+            // Signos de interrogación flotantes
+            signs.forEach(sign => {
+                const signX = sign.x - cameraX;
+                if (signX > -200 && signX < 1200) {
+                    drawQuestionSign(signX, sign.y, sign.word, sign.revealed, sign.read);
+                }
+            });
+            
+            // Fantasmas
+            ghosts.forEach(ghost => {
+                if (ghost.active && ghost.y < 700) {
+                    const ghostX = ghost.x - cameraX;
+                    if (ghostX > -100 && ghostX < 1100) {
+                        drawGhost(ghostX, ghost.y);
+                    }
+                }
+            });
+            
+            // Dinosaurio jefe
+            if (dinosaur && dinosaur.active) {
+                const dinoX = dinosaur.x - cameraX;
+                if (dinoX > -200 && dinoX < 1200) {
+                    drawDinosaur(dinoX, dinosaur.y);
+                }
+            }
+            
+            drawPlayer();
+            
+            drawRect(0, 0, 1000, 70, 'rgba(44, 62, 80, 0.9)');
+            drawText(`💰 ${gameData.coins}`, 25, 35, 26, '#FFD700');
+            
+            let heartsText = '';
+            for (let i = 0; i < gameData.lives; i++) {
+                heartsText += '❤️';
+            }
+            drawText(heartsText, 250, 35, 26, '#FF0000');
+            
+            drawText(`📖 ${gameData.wordsRead}/10`, 500, 35, 26, '#FFF', 'center');
+            drawText(`Nivel ${gameData.currentLevel}`, 950, 35, 26, '#FFF', 'right');
+            
+            if (gameData.hasShield) {
+                drawText('🛡️', 180, 35, 26, '#00D4FF');
+            }
+            
+            const buttons = [];
+            
+            ctx.fillStyle = 'rgba(155, 89, 182, 0.75)';
+            ctx.beginPath();
+            ctx.arc(150, 610, 45, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            drawText('←', 150, 610, 44, '#FFF', 'center');
+            buttons.push({ x: 105, y: 565, w: 90, h: 90, action: 'left' });
+            
+            ctx.fillStyle = 'rgba(46, 204, 113, 0.75)';
+            ctx.beginPath();
+            ctx.arc(280, 610, 45, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            drawText('↑', 280, 610, 44, '#FFF', 'center');
+            buttons.push({ x: 235, y: 565, w: 90, h: 90, action: 'jump' });
+            
+            ctx.fillStyle = 'rgba(230, 126, 34, 0.75)';
+            ctx.beginPath();
+            ctx.arc(410, 610, 45, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            drawText('→', 410, 610, 44, '#FFF', 'center');
+            buttons.push({ x: 365, y: 565, w: 90, h: 90, action: 'right' });
+            
+            return buttons;
+        }
+
+        function drawDialog() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.fillRect(0, 0, 1000, 700);
+            
+            drawRect(150, 220, 700, 280, '#FFF', '#2c3e50');
+            
+            drawText(currentSign.word, 500, 300, 84, '#000', 'center');
+            
+            drawText('¿El niño/a leyó correctamente?', 500, 380, 22, '#34495e', 'center');
+            
+            const buttons = [];
+            const correctBtn = drawButton(250, 430, 180, 55, '✅ Correcto', '#27ae60');
+            buttons.push({ ...correctBtn, action: 'correct' });
+            
+            const incorrectBtn = drawButton(570, 430, 180, 55, '❌ Incorrecto', '#e74c3c');
+            buttons.push({ ...incorrectBtn, action: 'incorrect' });
+            
+            return buttons;
+        }
+
+        function drawVictory() {
+            drawRect(0, 0, 1000, 700, '#FFD700');
+            
+            drawText('🎉 ¡NIVEL', 500, 120, 54, '#FFF', 'center', true);
+            drawText('COMPLETADO! 🎉', 500, 180, 54, '#FFF', 'center', true);
+            
+            drawText(`💰 Monedas: ${gameData.coins}`, 500, 270, 32, '#2c3e50', 'center');
+            drawText(`❤️ Vidas: ${gameData.lives}`, 500, 320, 32, '#e74c3c', 'center');
+            
+            if (gameData.currentLevel === gameData.unlockedLevels && gameData.currentLevel < 9) {
+                gameData.unlockedLevels++;
+                drawText(`🔓 Nivel ${gameData.unlockedLevels} desbloqueado`, 500, 370, 24, '#27ae60', 'center');
+            }
+            
+            const buttons = [];
+            const shopBtn = drawButton(325, 430, 350, 65, '🛒 IR A LA TIENDA', '#FF9800');
+            buttons.push({ ...shopBtn, action: 'shop' });
+            
+            const menuBtn = drawButton(325, 520, 350, 65, '🏠 MENÚ PRINCIPAL', '#3498db');
+            buttons.push({ ...menuBtn, action: 'menu' });
+            
+            return buttons;
+        }
+
+        function drawGameOver() {
+            drawRect(0, 0, 1000, 700, '#34495e');
+            
+            drawText('💀 GAME OVER 💀', 500, 200, 54, '#e74c3c', 'center', true);
+            drawText('¡Te quedaste sin vidas!', 500, 280, 28, '#FFF', 'center');
+            drawText(`Nivel: ${gameData.currentLevel}`, 500, 330, 24, '#FFF', 'center');
+            drawText(`💰 ${gameData.coins}`, 500, 370, 24, '#FFD700', 'center');
+            
+            const buttons = [];
+            const retryBtn = drawButton(325, 440, 350, 65, '🔄 REINTENTAR', '#e67e22');
+            buttons.push({ ...retryBtn, action: 'retry' });
+            
+            const menuBtn = drawButton(325, 530, 350, 65, '🏠 MENÚ', '#3498db');
+            buttons.push({ ...menuBtn, action: 'menu' });
+            
+            return buttons;
+        }
+
+        function drawShop() {
+            drawRect(0, 0, 1000, 700, '#9b59b6');
+            
+            drawText('🛒 TIENDA', 500, 60, 44, '#FFF', 'center', true);
+            drawText(`💰 ${gameData.coins}`, 500, 120, 28, '#FFD700', 'center');
+            
+            const buttons = [];
+            
+            shopItems.forEach((item, i) => {
+                const row = Math.floor(i / 4);
+                const col = i % 4;
+                const x = 80 + col * 230;
+                const y = 200 + row * 160;
+                
+                if (item.type === 'costume') {
+                    const isOwned = gameData.ownedCostumes.includes(item.id);
+                    const isCurrent = gameData.currentCostume === item.id;
+                    
+                    const bgColor = isCurrent ? '#27ae60' : (isOwned ? '#3498db' : '#95a5a6');
+                    drawRect(x, y, 200, 130, bgColor, '#FFF');
+                    
+                    drawText(item.name, x + 100, y + 30, 18, '#FFF', 'center');
+                    
+                    if (isOwned) {
+                        if (isCurrent) {
+                            drawText('✅ EQUIPADO', x + 100, y + 80, 16, '#FFF', 'center');
+                        } else {
+                            const btn = drawButton(x + 30, y + 65, 140, 40, 'EQUIPAR', '#2ecc71');
+                            buttons.push({ ...btn, action: 'equip', item: item.id });
+                        }
+                    } else {
+                        drawText(`💰 ${item.price}`, x + 100, y + 65, 18, '#FFD700', 'center');
+                        const canBuy = gameData.coins >= item.price;
+                        const btn = drawButton(x + 30, y + 85, 140, 35, canBuy ? 'COMPRAR' : 'SIN $', canBuy ? '#f39c12' : '#7f8c8d');
+                        if (canBuy) {
+                            buttons.push({ ...btn, action: 'buy', item: item.id, price: item.price, type: 'costume' });
+                        }
+                    }
+                } else {
+                    drawRect(x, y, 200, 130, '#16a085', '#FFF');
+                    drawText(item.name, x + 100, y + 30, 20, '#FFF', 'center');
+                    drawText(`💰 ${item.price}`, x + 100, y + 60, 18, '#FFD700', 'center');
+                    drawText('Protege 1 nivel', x + 100, y + 85, 14, '#FFF', 'center');
+                    const canBuy = gameData.coins >= item.price;
+                    const btn = drawButton(x + 30, y + 95, 140, 30, canBuy ? 'COMPRAR' : 'SIN $', canBuy ? '#27ae60' : '#7f8c8d');
+                    if (canBuy) {
+                        buttons.push({ ...btn, action: 'buy', item: item.id, price: item.price, type: 'item' });
+                    }
+                }
+            });
+            
+            const backBtn = drawButton(400, 620, 200, 50, '⬅ VOLVER', '#34495e');
+            buttons.push({ ...backBtn, action: 'menu' });
+            
+            return buttons;
+        }
+
+        // ============ UPDATE Y FÍSICA ============
+        function updateGame() {
+            gameTime++;
+            
+            if (keys['ArrowLeft'] || keys['a'] || touchLeft) {
+                player.velocityX = -player.speed;
+            } else if (keys['ArrowRight'] || keys['d'] || touchRight) {
+                player.velocityX = player.speed;
+            } else {
+                player.velocityX = 0;
+            }
+            
+            if ((keys['ArrowUp'] || keys[' '] || touchJump) && player.onGround) {
+                player.velocityY = -player.jumpPower;
+                player.onGround = false;
+            }
+            
+            player.velocityY += player.gravity;
+            player.x += player.velocityX;
+            player.y += player.velocityY;
+            
+            if (player.y >= 625) {
+                player.y = 625;
+                player.velocityY = 0;
+                player.onGround = true;
+            }
+            
+            // Plataforma final (isla)
+            if (player.x + player.width/2 > 3300 && 
+                player.x - player.width/2 < 3550 &&
+                player.y + player.height/2 > 450 && 
+                player.y + player.height/2 < 475 &&
+                player.velocityY > 0) {
+                player.y = 450 - player.height/2;
+                player.velocityY = 0;
+                player.onGround = true;
+            }
+            
+            const platforms = [
+                [300, 520], [600, 470], [900, 520], [1200, 440],
+                [1500, 520], [1800, 500], [2100, 520], [2400, 460],
+                [2700, 520], [3000, 480]
+            ];
+            
+            platforms.forEach(([px, py]) => {
+                if (player.x + player.width/2 > px && 
+                    player.x - player.width/2 < px + 150 &&
+                    player.y + player.height/2 > py && 
+                    player.y + player.height/2 < py + 20 &&
+                    player.velocityY > 0) {
+                    player.y = py - player.height/2;
+                    player.velocityY = 0;
+                    player.onGround = true;
+                }
+            });
+            
+            if (player.x < 20) player.x = 20;
+            if (player.x > 3950) player.x = 3950;
+            
+            cameraX = player.x - 500;
+            if (cameraX < 0) cameraX = 0;
+            if (cameraX > 3000) cameraX = 3000;
+            
+            // Actualizar fantasmas
+            ghosts.forEach(ghost => {
+                if (ghost.active) {
+                    ghost.y += ghost.velocityY;
+                    
+                    if (ghost.y >= 650) {
+                        ghost.active = false;
+                    }
+                    
+                    if (!player.invincible && !gameData.hasShield) {
+                        const dist = Math.sqrt((player.x - ghost.x) ** 2 + (player.y - ghost.y) ** 2);
+                        if (dist < 40) {
+                            gameData.lives--;
+                            player.invincible = true;
+                            player.invincibleTimer = 120;
+                            ghost.active = false;
+                            
+                            if (gameData.lives <= 0) {
+                                gameData.scene = 'gameover';
+                            }
+                        }
+                    } else if (gameData.hasShield) {
+                        const dist = Math.sqrt((player.x - ghost.x) ** 2 + (player.y - ghost.y) ** 2);
+                        if (dist < 50) {
+                            ghost.active = false;
+                        }
+                    }
+                }
+            });
+            
+            // Actualizar dinosaurio - SIEMPRE se mueve una vez que aparece
+            if (dinosaur && dinosaur.active) {
+                // El dinosaurio se mueve de lado a lado
+                dinosaur.x += dinosaur.velocityX * dinosaur.direction;
+                
+                // Cambiar dirección en los límites
+                if (dinosaur.x < 3250 || dinosaur.x > 3550) {
+                    dinosaur.direction *= -1;
+                }
+                
+                // Colisión con dinosaurio (solo cuando todas las palabras están leídas)
+                if (gameData.wordsRead >= 10 && !player.invincible) {
+                    const distX = Math.abs(player.x - dinosaur.x);
+                    const distY = Math.abs(player.y - dinosaur.y);
+                    
+                    if (distX < 60 && distY < 50) {
+                        // Perder TODAS las monedas
+                        gameData.coins = 0;
+                        player.invincible = true;
+                        player.invincibleTimer = 120;
+                        
+                        // Empujar hacia atrás
+                        player.x -= 100;
+                    }
+                }
+            }
+            
+            if (player.invincible) {
+                player.invincibleTimer--;
+                if (player.invincibleTimer <= 0) {
+                    player.invincible = false;
+                }
+            }
+            
+            if (!showingDialog) {
+                signs.forEach(sign => {
+                    if (!sign.read && 
+                        Math.abs(player.x - sign.x) < 90 && 
+                        Math.abs(player.y - sign.y) < 70) {
+                        showingDialog = true;
+                        currentSign = sign;
+                        sign.revealed = true;
+                    }
+                });
+            }
+            
+            // Victoria cuando lee todas las palabras y llega al final
+            if (gameData.wordsRead >= 10 && player.x > 3700 && !showingDialog) {
+                gameData.scene = 'victory';
+            }
+        }
+
+        function handleClick(x, y) {
+            let buttons = [];
+            
+            if (gameData.scene === 'menu') {
+                buttons = drawMenu();
+            } else if (gameData.scene === 'game' && !showingDialog) {
+                buttons = drawGame();
+            } else if (gameData.scene === 'game' && showingDialog) {
+                buttons = drawDialog();
+            } else if (gameData.scene === 'victory') {
+                buttons = drawVictory();
+            } else if (gameData.scene === 'shop') {
+                buttons = drawShop();
+            } else if (gameData.scene === 'gameover') {
+                buttons = drawGameOver();
+            }
+            
+            buttons.forEach(btn => {
+                if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+                    handleAction(btn);
+                }
+            });
+        }
+
+        function handleAction(btn) {
+            switch(btn.action) {
+                case 'level':
+                    gameData.currentLevel = btn.level;
+                    gameData.scene = 'game';
+                    initGame();
+                    break;
+                case 'shop':
+                    gameData.scene = 'shop';
+                    break;
+                case 'menu':
+                    gameData.scene = 'menu';
+                    gameData.lives = 3;
+                    break;
+                case 'retry':
+                    gameData.lives = 3;
+                    gameData.scene = 'game';
+                    initGame();
+                    break;
+                case 'left':
+                    touchLeft = true;
+                    touchRight = false;
+                    break;
+                case 'right':
+                    touchRight = true;
+                    touchLeft = false;
+                    break;
+                case 'jump':
+                    touchJump = true;
+                    setTimeout(() => touchJump = false, 200);
+                    break;
+                case 'correct':
+                    gameData.coins += 1;
+                    gameData.wordsRead += 1;
+                    currentSign.read = true;
+                    showingDialog = false;
+                    break;
+                case 'incorrect':
+                    gameData.coins -= 1;
+                    if (gameData.coins < 0) gameData.coins = 0;
+                    gameData.wordsRead += 1;
+                    currentSign.read = true;
+                    showingDialog = false;
+                    break;
+                case 'buy':
+                    gameData.coins -= btn.price;
+                    if (btn.type === 'costume') {
+                        gameData.ownedCostumes.push(btn.item);
+                        gameData.currentCostume = btn.item;
+                    } else if (btn.item === 'shield') {
+                        gameData.hasShield = true;
+                    }
+                    break;
+                case 'equip':
+                    gameData.currentCostume = btn.item;
+                    break;
+            }
+        }
+
+        // ============ GAME LOOP ============
+        function gameLoop() {
+            ctx.clearRect(0, 0, 1000, 700);
+            
+            if (gameData.scene === 'menu') {
+                drawMenu();
+            } else if (gameData.scene === 'game') {
+                if (!showingDialog) {
+                    updateGame();
+                }
+                drawGame();
+                if (showingDialog) {
+                    drawDialog();
+                }
+            } else if (gameData.scene === 'victory') {
+                drawVictory();
+            } else if (gameData.scene === 'shop') {
+                drawShop();
+            } else if (gameData.scene === 'gameover') {
+                drawGameOver();
+            }
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+
+        // Registrar Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then(registration => {
+                        console.log('Service Worker registrado con éxito:', registration.scope);
+                    })
+                    .catch(error => {
+                        console.log('Error al registrar Service Worker:', error);
+                    });
+            });
+        }
+    </script>
+</body>
+</html>
